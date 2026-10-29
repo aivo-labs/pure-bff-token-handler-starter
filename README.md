@@ -29,7 +29,7 @@ Most modern Single-Page Applications (SPA) make one of two critical security mis
 ```text
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                                 BROWSER (VUE 3 SPA)                                    │
-│  - HttpOnly Cookie: bff_session (AES-256 Encrypted, ~500 bytes)                       │
+│  - HttpOnly Cookie: bff_session (AES-256 Encrypted, ~500 bytes)                        │
 │  - Ephemeral Anti-CSRF Token in RAM memory                                             │
 └───────────────────┬──────────────────────────────────────────────▲─────────────────────┘
                     │                                              │
@@ -53,7 +53,7 @@ Most modern Single-Page Applications (SPA) make one of two critical security mis
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                           IDENTITY PROVIDER (KEYCLOAK / OIDC)                          │
 │  - OpenID Connect 1.0 & OAuth 2.0 PKCE                                                 │
-│  - Single Sign-On (SSO) & Realm Session Management                                    │
+│  - Single Sign-On (SSO) & Realm Session Management                                     │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
