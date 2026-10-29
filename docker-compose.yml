@@ -1,0 +1,128 @@
+# ==============================================================================
+# Pure BFF & Token Handler Starter - Docker Compose Stack
+# 
+# ⚠️ WARNING: THIS CONFIGURATION IS INTENDED FOR LOCAL DEMO / DEVELOPMENT ONLY.
+# DO NOT DEPLOY TO PRODUCTION AS-IS WITHOUT APPLYING THE SECURITY HARDENING BELOW:
+#   1. Replace all default passwords and secrets (DB, Keycloak Admin, OIDC, Session).
+#   2. Switch Keycloak from 'start-dev' to 'start' with strict HTTPS and TLS certificates.
+#   3. Enable COOKIE_SECURE="true" for encrypted HTTPS transmission.
+#   4. Remove direct database port exposure (5432) to the host.
+#   5. Use real production domain URLs (HTTPS) instead of localhost / HTTP.
+# ==============================================================================
+
+services:
+  # ============================================================================
+  # 1. PostgreSQL Database
+  # Stores Keycloak data and Sovereign BFF user sessions
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: pure-bff-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      # ⚠️ DEV ONLY: Replace default password with a strong secret in production!
+      POSTGRES_PASSWORD: password
+    # ⚠️ DEV ONLY: Do NOT expose port 5432 publicly in production! Keep inside Docker network.
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # 2. Keycloak IAM Server
+  # Auto-imports demo realm with pre-provisioned clients and users
+  # ============================================================================
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.5
+    container_name: pure-bff-keycloak
+    restart: unless-stopped
+    # ⚠️ DEV ONLY: 'start-dev' disables TLS and uses dev mode. In production, use 'start' with TLS.
+    command: start-dev --import-realm
+    environment:
+      # ⚠️ DEV ONLY: Change admin username and password immediately in production!
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      # ⚠️ DEV ONLY: Replace with your production DB secret
+      KC_DB_PASSWORD: password
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_RELATIVE_PATH: "/"
+      # ⚠️ DEV ONLY: In production, set KC_HOSTNAME to your real domain (e.g. auth.example.com)
+      # and enforce KC_HOSTNAME_STRICT="true" with TLS.
+      KC_HOSTNAME: "localhost"
+      KC_HOSTNAME_PORT: "8080"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
+    ports:
+      - "8080:8080"
+    volumes:
+      # ⚠️ DEV ONLY: Used for initial demo seed. Manage realm via GitOps / Admin console in production.
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ============================================================================
+  # 3. Backend-For-Frontend (BFF) Fastify Server
+  # Manages OIDC tokens server-side, encrypts cookie, guards CSRF
+  # ============================================================================
+  bff:
+    build:
+      context: ./bff
+      dockerfile: Dockerfile
+    container_name: pure-bff-server
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      NODE_ENV: production
+      # ⚠️ DEV ONLY: Set to public HTTPS URLs in production (e.g. https://auth.example.com)
+      OIDC_ISSUER_URL: http://localhost:8080
+      OIDC_INTERNAL_ISSUER_URL: http://keycloak:8080
+      KEYCLOAK_REALM: pure-bff-demo
+      OIDC_CLIENT_ID: bff-client
+      # ⚠️ DEV ONLY: Generate a cryptographically secure client secret in production!
+      OIDC_CLIENT_SECRET: bff-secret-super-secure-change-in-prod
+      OIDC_REDIRECT_URI: http://localhost:3000/api/auth/callback
+      FRONTEND_URL: http://localhost:5173
+      DATABASE_URL: postgres://keycloak:password@postgres:5432/keycloak
+      # ⚠️ DEV ONLY: Generate a 32+ byte random string (openssl rand -hex 32) in production!
+      SESSION_SECRET: starter_secret_key_must_be_32_bytes_long_min!
+      COOKIE_NAME: bff_session
+      # ⚠️ CRITICAL: Must be "true" in production! "false" is strictly for local HTTP dev.
+      COOKIE_SECURE: "false"
+      COOKIE_SAMESITE: lax
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  # ============================================================================
+  # 4. Frontend Single-Page Application (Vue 3 + Vite)
+  # Zero tokens in browser, HttpOnly cookie credentials
+  # ============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: pure-bff-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - bff
+
+volumes:
+  postgres_data:
